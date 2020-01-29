@@ -42,11 +42,19 @@ The minimum SAP HANA certified conditions for the different storage types are:
 
 Some of the storage types can be combined. E.g., it is possible to put /hana/data onto Premium Storage and /hana/log can be placed on Ultra disk storage in order to get the required low latency. However, if you use an NFS v4.1 volume based on ANF for /hana/data, you are required to use another NFS v4.1 volume based on ANF for /hana/log. Using NFS on top of ANF for one of the volumes (like /hana/data) and Azure Premium Storage or Ultra disk for the other volume (like /hana/log) is **not supported**.
 
-In the on-premises world, you rarely had to care about the I/O subsystems and its capabilities. Reason was that the appliance vendor needed to make sure that the minimum storage requirements are met for SAP HANA. As you build the Azure infrastructure yourself, you should be aware of some of these SAP issued requirements. Some of the minimum throughput characteristics that are required from SAP, are resulting in the need to:
+In the on-premises world, you rarely had to care about the I/O subsystems and its capabilities. Reason was that the appliance vendor needed to make sure that the minimum storage requirements are met for SAP HANA. As you build the Azure infrastructure yourself, you should be aware of some of these SAP issued requirements. The key storage KPIs published by SAP for production HANA scenarios are:
 
-- Enable read/write on **/hana/log** of a 250 MB/sec with 1 MB I/O sizes
-- Enable read activity of at least 400 MB/sec for **/hana/data** for 16 MB and 64 MB I/O sizes
-- Enable write activity of at least 250 MB/sec for **/hana/data** with 16 MB and 64 MB I/O sizes
+| Volume | Block Sizes | Test File Size* | Initial Write (MB/s) | Overwrite (MB/s) | Read (MB/s)| Latency (ms) |
+| --- | --- | --- | --- | --- | --- | --- |
+| /hana/log | 4KB | 5GB | N/A | 30MB/s | N/A | 1ms |
+| /hana/log | 16KB | 16GB | N/A | 120MB/s | N/A | 1ms |
+| /hana/log | 1MB | 16GB | N/A | 250MB/s | 250MB/s | N/A |
+| /hana/data | 4KB | 5GB | N/A | N/A | N/A | N/A |
+| /hana/data | 16KB | 16GB | 40MB/s | 100MB/s | N/A | N/A |
+| /hana/data | 64KB | 16GB | 100MB/s | 150MB/s | 250MB/s | N/A |
+| /hana/data | 1MB | 16GB  | 150MB/s | 200MB/s | 300MB/s | N/A |
+| /hana/data | 16MB | 16GB | 200MB/s | 250MB/s | 400MB/s | N/A |
+| /hana/data | 64MB | 16GB | 200MB/s | 250MB/s | 400MB/s | N/A |
 
 Given that low storage latency is critical for DBMS systems, even as DBMS, like SAP HANA, keep data in-memory. The critical path in storage is usually around the transaction log writes of the DBMS systems. But also operations like writing savepoints or loading data in-memory after crash recovery can be critical. Therefore, it is **mandatory** to leverage Azure Premium Disks for **/hana/data** and **/hana/log** volumes. In order to achieve the minimum throughput of **/hana/log** and **/hana/data** as desired by SAP, you need to build a RAID 0 using MDADM or LVM over multiple Azure Premium Storage disks. And use the RAID volumes as **/hana/data** and **/hana/log** volumes. 
 
@@ -96,23 +104,27 @@ The caching recommendations below are assuming the I/O characteristics for SAP H
 
 The recommendations are often exceeding the SAP minimum requirements as stated earlier in this article. The listed recommendations are a compromise between the size recommendations by SAP and the maximum storage throughput the different VM types provide.
 
-**Recommendation: The recommended configurations for production scenarios look like:**
+**Recommendation: The recommended minimum configurations for production scenarios look like:**
 
 | VM SKU | RAM | Max. VM I/O<br /> Throughput | /hana/data | /hana/log | /hana/shared | /root volume | /usr/sap | hana/backup |
 | --- | --- | --- | --- | --- | --- | --- | --- | -- |
-| M32ts | 192 GiB | 500 MB/s | 3 x P20 | 2 x P20 | 1 x P20 | 1 x P6 | 1 x P6 |1 x P20 |
-| M32ls | 256 GiB | 500 MB/s | 3 x P20 | 2 x P20 | 1 x P20 | 1 x P6 | 1 x P6 |1 x P20 |
-| M64ls | 512 GiB | 1000 MB/s | 3 x P20 | 2 x P20 | 1 x P20 | 1 x P6 | 1 x P6 |1 x P30 |
-| M64s | 1000 GiB | 1000 MB/s | 4 x P20 | 2 x P20 | 1 x P30 | 1 x P6 | 1 x P6 |2 x P30 |
-| M64ms | 1750 GiB | 1000 MB/s | 3 x P30 | 2 x P20 | 1 x P30 | 1 x P6 | 1 x P6 | 3 x P30 |
-| M128s | 2000 GiB | 2000 MB/s |3 x P30 | 2 x P20 | 1 x P30 | 1 x P10 | 1 x P6 | 2 x P40 |
-| M128ms | 3800 GiB | 2000 MB/s | 5 x P30 | 2 x P20 | 1 x P30 | 1 x P10 | 1 x P6 | 4 x P40 |
-| M208s_v2 | 2850 GiB | 1000 MB/s | 4 x P30 | 2 x P20 | 1 x P30 | 1 x P10 | 1 x P6 | 3 x P40 |
-| M208ms_v2 | 5700 GiB | 1000 MB/s | 4 x P40 | 2 x P20 | 1 x P30 | 1 x P10 | 1 x P6 | 3 x P50 |
-| M416s_v2 | 5700 GiB | 2000 MB/s | 4 x P40 | 2 x P20 | 1 x P30 | 1 x P10 | 1 x P6 | 3 x P50 |
-| M416ms_v2 | 11400 GiB | 2000 MB/s | 8 x P40 | 2 x P20 | 1 x P30 | 1 x P10 | 1 x P6 | 4 x P50 |
+| M32ts | 192 GiB | 500 MB/s | 3 x P20 | 2 x P30 | 1 x P20 | 1 x P6 | 1 x P6 |1 x P20 |
+| M32ls | 256 GiB | 500 MB/s | 3 x P20 | 2 x P30 | 1 x P20 | 1 x P6 | 1 x P6 |1 x P20 |
+| M64ls | 512 GiB | 1000 MB/s | 3 x P20 | 2 x P30 | 1 x P20 | 1 x P6 | 1 x P6 |1 x P30 |
+| M64s | 1000 GiB | 1000 MB/s | 4 x P20 | 2 x P30 | 1 x P30 | 1 x P6 | 1 x P6 |2 x P30 |
+| M64ms | 1750 GiB | 1000 MB/s | 3 x P30 | 2 x P30 | 1 x P30 | 1 x P6 | 1 x P6 | 3 x P30 |
+| M128s | 2000 GiB | 2000 MB/s |3 x P30 | 2 x P30 | 1 x P30 | 1 x P10 | 1 x P6 | 2 x P40 |
+| M128ms | 3800 GiB | 2000 MB/s | 5 x P30 | 2 x P30 | 1 x P30 | 1 x P10 | 1 x P6 | 4 x P40 |
+| M208s_v2 | 2850 GiB | 1000 MB/s | 4 x P30 | 2 x P30 | 1 x P30 | 1 x P10 | 1 x P6 | 3 x P40 |
+| M208ms_v2 | 5700 GiB | 1000 MB/s | 4 x P40 | 2 x P30 | 1 x P30 | 1 x P10 | 1 x P6 | 3 x P50 |
+| M416s_v2 | 5700 GiB | 2000 MB/s | 4 x P40 | 2 x P30 | 1 x P30 | 1 x P10 | 1 x P6 | 3 x P50 |
+| M416ms_v2 | 11400 GiB | 2000 MB/s | 8 x P40 | 2 x P30 | 1 x P30 | 1 x P10 | 1 x P6 | 4 x P50 |
 
 Check whether the storage throughput for the different suggested volumes meets the workload that you want to run. If the workload requires higher volumes for **/hana/data** and **/hana/log**, you need to increase the number of Azure Premium Storage VHDs. Sizing a volume with more VHDs than listed increases the IOPS and I/O throughput within the limits of the Azure virtual machine type.
+
+**A minimum of 2 x P30 disks is required for /hana/log to achieve the throughput KPIs published by SAP**
+
+It is recommended to run SAP Hardware Check Configuration Tool (HWCCT) to ensure that your provisioned infrastructure meets the published KPIs and is configured in a supported manner. [SAP Note 1943937](https://launchpad.support.sap.com/#/notes/1943937)
 
 Azure Write Accelerator only works in conjunction with [Azure managed disks](https://azure.microsoft.com/services/managed-disks/). So at least the Azure Premium Storage disks forming the **/hana/log** volume need to be deployed as managed disks.
 
